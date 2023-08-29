@@ -66,11 +66,12 @@
 
 // #define DEBUG_STATE_CHECK
 
-// the reversion of pitch and roll to zero
+// the reversion of pitch and roll to zero 
 #ifdef CONFIG_DECK_LOCO_2D_POSITION
 #define ROLLPITCH_ZERO_REVERSION (0.0f)
 #else
-#define ROLLPITCH_ZERO_REVERSION (0.001f)
+#define ROLLPITCH_ZERO_REVERSION (0.0f) 
+// Hao modified
 #endif
 
 
@@ -126,15 +127,15 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
 {
   // Initial variances, uncertain of position, but know we're stationary and roughly flat
   params->stdDevInitialPosition_xy = 100;
-  params->stdDevInitialPosition_z = 1;
+  params->stdDevInitialPosition_z = 10; // Hao modified
   params->stdDevInitialVelocity = 0.01;
   params->stdDevInitialAttitude_rollpitch = 0.01;
   params->stdDevInitialAttitude_yaw = 0.01;
 
   params->procNoiseAcc_xy = 0.5f;
   params->procNoiseAcc_z = 1.0f;
-  params->procNoiseVel = 0;
-  params->procNoisePos = 0;
+  params->procNoiseVel = 0.1; // Hao modified
+  params->procNoisePos = 0.1; // Hao modified
   params->procNoiseAtt = 0;
   params->measNoiseBaro = 2.0f;           // meters
   params->measNoiseGyro_rollpitch = 0.1f; // radians per second
@@ -324,8 +325,8 @@ void kalmanCoreUpdateWithBaro(kalmanCoreData_t *this, const kalmanCoreParams_t *
   arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
 
   h[KC_STATE_Z] = 1;
-
-  if (!quadIsFlying || this->baroReferenceHeight < 1) {
+  // Hao modified
+  if ( this->baroReferenceHeight < 1) {
     //TODO: maybe we could track the zero height as a state. Would be especially useful if UWB anchors had barometers.
     this->baroReferenceHeight = baroAsl;
   }
@@ -483,8 +484,9 @@ static void predictDt(kalmanCoreData_t* this, Axis3f *acc, Axis3f *gyro, float d
   float tmpSPX, tmpSPY, tmpSPZ;
   float zacc;
 
-  if (quadIsFlying) // only acceleration in z direction
-  {
+  // Hao modified
+  // if (quadIsFlying) // only acceleration in z direction
+  // {
     // Use accelerometer and not commanded thrust, as this has proper physical units
     zacc = acc->z;
 
@@ -507,29 +509,29 @@ static void predictDt(kalmanCoreData_t* this, Axis3f *acc, Axis3f *gyro, float d
     this->S[KC_STATE_PX] += dt * (gyro->z * tmpSPY - gyro->y * tmpSPZ - GRAVITY_MAGNITUDE * this->R[2][0]);
     this->S[KC_STATE_PY] += dt * (-gyro->z * tmpSPX + gyro->x * tmpSPZ - GRAVITY_MAGNITUDE * this->R[2][1]);
     this->S[KC_STATE_PZ] += dt * (zacc + gyro->y * tmpSPX - gyro->x * tmpSPY - GRAVITY_MAGNITUDE * this->R[2][2]);
-  }
-  else // Acceleration can be in any direction, as measured by the accelerometer. This occurs, eg. in freefall or while being carried.
-  {
-    // position updates in the body frame (will be rotated to inertial frame)
-    dx = this->S[KC_STATE_PX] * dt + acc->x * dt2 / 2.0f;
-    dy = this->S[KC_STATE_PY] * dt + acc->y * dt2 / 2.0f;
-    dz = this->S[KC_STATE_PZ] * dt + acc->z * dt2 / 2.0f; // thrust can only be produced in the body's Z direction
+  // }
+  // else // Acceleration can be in any direction, as measured by the accelerometer. This occurs, eg. in freefall or while being carried.
+  // {
+  //   // position updates in the body frame (will be rotated to inertial frame)
+  //   dx = this->S[KC_STATE_PX] * dt + acc->x * dt2 / 2.0f;
+  //   dy = this->S[KC_STATE_PY] * dt + acc->y * dt2 / 2.0f;
+  //   dz = this->S[KC_STATE_PZ] * dt + acc->z * dt2 / 2.0f; // thrust can only be produced in the body's Z direction
 
-    // position update
-    this->S[KC_STATE_X] += this->R[0][0] * dx + this->R[0][1] * dy + this->R[0][2] * dz;
-    this->S[KC_STATE_Y] += this->R[1][0] * dx + this->R[1][1] * dy + this->R[1][2] * dz;
-    this->S[KC_STATE_Z] += this->R[2][0] * dx + this->R[2][1] * dy + this->R[2][2] * dz - GRAVITY_MAGNITUDE * dt2 / 2.0f;
+  //   // position update
+  //   this->S[KC_STATE_X] += this->R[0][0] * dx + this->R[0][1] * dy + this->R[0][2] * dz;
+  //   this->S[KC_STATE_Y] += this->R[1][0] * dx + this->R[1][1] * dy + this->R[1][2] * dz;
+  //   this->S[KC_STATE_Z] += this->R[2][0] * dx + this->R[2][1] * dy + this->R[2][2] * dz - GRAVITY_MAGNITUDE * dt2 / 2.0f;
 
-    // keep previous time step's state for the update
-    tmpSPX = this->S[KC_STATE_PX];
-    tmpSPY = this->S[KC_STATE_PY];
-    tmpSPZ = this->S[KC_STATE_PZ];
+  //   // keep previous time step's state for the update
+  //   tmpSPX = this->S[KC_STATE_PX];
+  //   tmpSPY = this->S[KC_STATE_PY];
+  //   tmpSPZ = this->S[KC_STATE_PZ];
 
-    // body-velocity update: accelerometers - gyros cross velocity - gravity in body frame
-    this->S[KC_STATE_PX] += dt * (acc->x + gyro->z * tmpSPY - gyro->y * tmpSPZ - GRAVITY_MAGNITUDE * this->R[2][0]);
-    this->S[KC_STATE_PY] += dt * (acc->y - gyro->z * tmpSPX + gyro->x * tmpSPZ - GRAVITY_MAGNITUDE * this->R[2][1]);
-    this->S[KC_STATE_PZ] += dt * (acc->z + gyro->y * tmpSPX - gyro->x * tmpSPY - GRAVITY_MAGNITUDE * this->R[2][2]);
-  }
+  //   // body-velocity update: accelerometers - gyros cross velocity - gravity in body frame
+  //   this->S[KC_STATE_PX] += dt * (acc->x + gyro->z * tmpSPY - gyro->y * tmpSPZ - GRAVITY_MAGNITUDE * this->R[2][0]);
+  //   this->S[KC_STATE_PY] += dt * (acc->y - gyro->z * tmpSPX + gyro->x * tmpSPZ - GRAVITY_MAGNITUDE * this->R[2][1]);
+  //   this->S[KC_STATE_PZ] += dt * (acc->z + gyro->y * tmpSPX - gyro->x * tmpSPY - GRAVITY_MAGNITUDE * this->R[2][2]);
+  // }
 
   // attitude update (rotate by gyroscope), we do this in quaternions
   // this is the gyroscope angular velocity integrated over the sample period
